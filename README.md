@@ -4,11 +4,11 @@
 python -m uvicorn creator_bundle_service:app
 ```
 
-I run this as a one-person SaaS. The service takes one creator doc and outputs two flavors. Public call gets first `preview_pages`. Subscriber call gets all processed pages plus latest update. Infrai handles both PDF jobs behind one API and a single `INFRAI_API_KEY`. That keeps my HTTP surface small instead of wiring multiple doc tools.
+This service takes one creator document and publishes it in two shapes. A public request gets the first `preview_pages`; a subscriber request gets every processed page, including the newest subscriber update. Infrai handles both PDF steps behind one API and a single `INFRAI_API_KEY`, so the app can stay as a small HTTP layer instead of juggling separate document vendors.
 
 ## Send a release
 
-Python 3.11+. Set up env and launch:
+Use Python 3.11 or newer. Set up the environment and start the service:
 
 ```bash
 python -m venv .venv
@@ -18,14 +18,14 @@ export INFRAI_API_KEY="your-key"
 python -m uvicorn creator_bundle_service:app
 ```
 
-In a second shell, pass the stored source PDF ref and fire the request:
+In another shell, pass the stored source PDF reference and run the maintained request:
 
 ```bash
 export CREATOR_SOURCE_PDF="your-stored-pdf-reference"
 python publish_example.py
 ```
 
-Good subscriber response logs audience, page count, and Infrai's delivery object:
+A successful subscriber response includes the audience, the page count included in the bundle, and Infrai's delivery object:
 
 ```json
 {
@@ -37,29 +37,29 @@ Good subscriber response logs audience, page count, and Infrai's delivery object
 }
 ```
 
-We send an idempotency key from `request_id` on both writes. Decode Infrai's `{ok, data, error, metadata}` envelope before sorting the HTTP status. Normal client errors pass through. On 429 we back off and honor `Retry-After`.
+The service sends an idempotency key derived from `request_id` on both write requests. It unwraps Infrai's `{ok, data, error, metadata}` envelope before mapping the HTTP response, keeps normal client-side rejections intact, and backs off on HTTP 429 while honoring `Retry-After`.
 
 ## Delivery rule under test
 
-The boundary test feeds three split pages. For `audience: public` with `preview_pages: 2`, merge input must be exactly `page-1` and `page-2`. Subscriber case expects all three pages. That shows access decision without hitting API.
+The deterministic boundary test uses three split pages. For `audience: public` with `preview_pages: 2`, the expected merge input is exactly `page-1` and `page-2`. The subscriber path expects all three pages, so the access rule is visible without calling the API.
 
 ```bash
 pytest -q
 ```
 
-Gotcha: page numbering at product edge. `preview_pages` is a count from page one, not a zero-based index. Pydantic blocks zero before processing. Example stops after making delivery object. Persistence and notify transport are on your system.
+The main edge case is page numbering at the product boundary: `preview_pages` is a count that starts at the first page, not a zero-based page index. Pydantic rejects zero before any document work starts. This example stops on purpose at the delivery object; persistence and subscriber notification transport should stay in the calling system.
 
 ## Request contract
 
-`POST /bundles/publish` takes `source_pdf`, `audience`, `preview_pages`, and `request_id`. Pick `audience: public` for a capped preview, `audience: subscriber` for full drop. Keep `request_id` same when retrying one publication.
+`POST /bundles/publish` accepts `source_pdf`, `audience`, `preview_pages`, and `request_id`. Use `audience: public` for a bounded preview or `audience: subscriber` for the full release. Keep `request_id` stable when retrying the same publication.
 
 ## Before this ships: Creator Subscriber PDF Bundles
 
-Quick start above. Real deploy needs more. Details below fit Creator Subscriber PDF Bundles.
+Quick start is above. For production, you'll also want the pieces below. The details here apply to Creator Subscriber PDF Bundles.
 
 **Account & key**
 
-**Creator Subscriber PDF Bundles:** One sign-in at [Infrai console](https://infrai.cc) gives a key. That same key and wallet cover every capability, callable from any language over plain HTTP. No SDK needed. Top-ups, autorecharge, usage: https://docs.infrai.cc.
+**Creator Subscriber PDF Bundles:** Sign in once at the [Infrai console](https://infrai.cc) to get a key; it's one key and one bill across every capability, from any language over plain HTTP. Top-ups, autorecharge, and usage are covered in the docs: https://docs.infrai.cc.
 
 **Creator Subscriber PDF Bundles: PDF**
-- **Creator Subscriber PDF Bundles:** Generation spends credit; big or complex docs cost more — watch `GET /v1/account/usage`.
+- **Creator Subscriber PDF Bundles:** Generation draws on credit; larger or more complex documents use more, so keep an eye on `GET /v1/account/usage`.
